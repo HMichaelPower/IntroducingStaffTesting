@@ -1,0 +1,176 @@
+---
+title: "This is a test of how notebook works"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Cmd+Shift+Enter*. 
+
+```{r}
+## %######################################################%##
+#                                                          #
+####            plot impacts of introducing             ####
+####        asymptomatic testing for SARS=COV-2         ####
+#                                                          #
+## %######################################################%##
+
+
+styler:::style_active_file() # take the opportunity of tidying the layout
+source("utilityFunctions.R")
+
+# install.packages("devtools")
+# devtools::install_github("ThinkR-open/littleboxes")
+# devtools::install_github("thomasp85/patchwork")
+# https://github.com/thomasp85/ggplot2_workshop
+# devtools::install_github("karthik/wesanderson")
+
+loadPackages(
+  list(
+    "readxl",
+    "cowplot",
+    "patchwork",
+    "ggbeeswarm", # alternative plot to violin
+    "wesanderson", # palettes for plots
+    "paletteer",
+    "gt"
+  )
+)
+
+
+
+## %######################################################%##
+#                                                          #
+####         Plot one-way sensitivity analyses          ####
+#                                                          #
+## %######################################################%##
+
+Strategies <- c(
+  "Perfect test", # needed to get plots in this order
+  "No test",
+  "RT_PCR",
+  "LFD at home",
+  "Sequential testing: LFD, RT-PCR",
+  "Sequential testing: LAMP, RT-PCR"
+)
+
+xldata <- "data/Model output HS 31 March 2021.xlsx"
+AsymTest <- readxl::read_xlsx(xldata) %>%
+  filter(!SA_Scenario == "Ignore") %>%
+  filter(!is.na(SA_Scenario)) %>%
+  filter(!SA_Parameter_Values == "All") %>%
+  filter(!Strategy == "Baseline (RT PCR)") %>%
+  mutate(Strategy = factor(Strategy, levels = Strategies))
+head(AsymTest)
+namesAT <- names(AsymTest)
+
+
+# put impact values in 1 column
+AsymTestLong <- AsymTest %>%
+  pivot_longer(cols = TPs:Staff_Contacts, names_to = "Impacts")
+
+namesATL <- names(AsymTestLong)
+
+# put Sensitivity scenarios in separate columns
+AsymTestWide <- AsymTestLong %>%
+  pivot_wider(names_from = SA_Scenario) %>%
+  group_by(Strategy)
+head(AsymTestWide)
+
+
+
+impact <- "FNs"
+saParam <- "LFD_PCR_TestsAccuracies"
+plotlist <- list()
+Impacts2Compare <- c("FPs", "FNs")
+tt <- FALSE
+for (I2C in Impacts2Compare) {
+  tt <- tt | AsymTestWide$Impacts == I2C
+}
+
+PlotData <- subset(AsymTestWide, tt)
+maxY <- max(PlotData$Worst_case, na.rm = TRUE)
+facetLabels <- tibble(
+  labs = Impacts2Compare,
+  x = 1,
+  y = 2
+)
+
+
+p <- ggplot(
+  data = PlotData,
+  mapping = aes(x = Strategy, y = Baseline)
+)
+
+p <- p + geom_point(aes(colour = SA_Parameter), position = position_dodge(width = 1))
+p <- p + geom_errorbar(aes(colour = SA_Parameter, ymin = Best_case, ymax = Worst_case),
+  width = .2, position = position_dodge(width = 1)
+)
+
+# p <- p + geom_pointrange(aes(ymin = Best_case, ymax = Worst_case,
+#                              colour = SA_Parameter,
+#                              position = position_dodge(width = 0.5)))
+# p <- p + annotate("text", label = facetLabels$SA_Parameter,
+#                        x = facetLabels$x, y = facetLabels$y,
+#                        size = 3, colour = "blue",
+#                   angle = 90, hjust = "middle", vjust = "middle")
+p <- p + coord_flip()
+p <- p + facet_grid(. ~ Impacts)
+p <- p + scale_y_continuous(limits = c(0, NA))
+p <- p + theme(legend.position = c(0.9, 0.75))
+
+
+# p <- p + theme(strip.text.y = element_blank())
+print(p)
+
+plotlist <- append(plotlist, list(p))
+
+plotlist[[1]] / plotlist[[2]]
+plot_grid(plotlist = plotlist, ncol = 1)
+ggsave(filename = "OneWaySensitivityAnalyses.tiff", path = "plots", device = "tiff")
+
+
+## %######################################################%##
+#                                                          #
+####                     PSA plots                      ####
+#                                                          #
+## %######################################################%##
+
+xldata <- "data/Introducing SARS-CoV-2 testing.xlsm"
+sheet <- "Data for R"
+PSA <- readxl::read_xlsx(xldata, sheet = sheet) %>%
+  pivot_longer(
+    cols = 2:5,
+    names_to = "Impact",
+    values_to = "Result"
+  ) %>%
+  mutate(Impact = factor(Impact)) %>%
+  group_by(Strategy, Impact)
+
+ggplot(
+  data = PSA,
+  mapping = aes(x = Impact, y = Result, colour = Impact),
+  alpha = 0.1
+) +
+  geom_beeswarm(aes(alpha = 0.1),
+    priority = "density",
+    cex = 0.4,
+    dodge.width = 0.5,
+    show.legend = FALSE
+  ) +
+  # geom_boxplot(fill = NA, colour = "grey", alpha = 0.1) +
+  geom_violin(
+    alpha = 0.5,
+    show.legend = FALSE
+  ) +
+  # theme(legend.position = "none") +
+  facet_wrap(. ~ Strategy)
+
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
